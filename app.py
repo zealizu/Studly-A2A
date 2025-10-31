@@ -80,6 +80,12 @@ def a2a_endpoint():
                 "id": rpc_request.id,
                 "error": {"code": -32601, "message": "Method not found"}
             }), 404
+        app.logger.info(
+                f"User message - Task: {task_id or 'N/A'}, "
+                f"Context: {context_id or 'N/A'}, "
+                f"Method: {rpc_request.method}, "
+                f"Text: '{messages}...'"
+            )
         result = agent.process_messages(
                 messages=messages,
                 context_id=context_id,
