@@ -6,6 +6,10 @@ import asyncio
 app = Flask(__name__)
 agent = StudlyAgent()
 
+@app.route("/")
+def home():
+    return "Server is live"
+
 @app.route("/.well-known/agent.json",methods=["GET"])
 def agent_card():
     metadata = {
