@@ -95,7 +95,6 @@ class StudlyAgent:
                     "- Total duration (days or weeks)\n"
                     "- Daily goals or milestones\n"
                     "- Estimated time per day\n"
-                    "- Recommended resources (books, websites, videos)\n"
                     "- Motivational advice at the end.\n"
                     "If the user asks something unrelated to study planning, "
                     "politely decline and suggest they ask for a study plan instead.\n\n"
