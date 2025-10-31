@@ -67,7 +67,9 @@ class StudlyAgent:
                 break
 
         if not user_text:
-            raise ValueError("User input is empty")
+            # Log empty case
+            print(f"Debug - Task {task_id}: Empty user input - parts: {len(user_message.parts or [])} items, kinds: {[p.kind for p in user_message.parts or []]}")
+            return self._build_fallback_response(task_id, context_id, "I didn't catch that—could you rephrase your study request?")
 
         # Retrieve past context (if any)
         history = self.study_contexts.get(context_id, [])
@@ -114,3 +116,18 @@ class StudlyAgent:
         except Exception as e:
             print(f"Gemini error: {e}")
             return "I encountered an issue generating the study plan. Please try again."
+
+def _build_fallback_response(self, task_id: str, context_id: str, message_text: str) -> TaskResult:
+    response_message = A2AMessage(
+        role="agent",
+        parts=[MessagePart(kind="text", text=message_text)],
+        taskId=task_id
+    )
+    artifacts = [Artifact(name="clarification", parts=[MessagePart(kind="text", text=message_text)])]
+    return TaskResult(
+        id=task_id,
+        contextId=context_id,
+        status=TaskStatus(state="completed", message=response_message),
+        artifacts=artifacts,
+        history=[response_message]  # Minimal history
+    )
