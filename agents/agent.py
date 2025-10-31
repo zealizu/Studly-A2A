@@ -34,7 +34,7 @@ class StudlyAgent:
                         ## Daily Goals: [list milestones]
                         ## Time Estimates: [per day]
                         # Tips: [motivational advice]
-                        If unrelated to studying, politely decline and suggest a study plan query. Concise (under 400 words).
+                        # Concise (under 400 words).
                         """
                     
                 )
@@ -117,17 +117,17 @@ class StudlyAgent:
             print(f"Gemini error: {e}")
             return "I encountered an issue generating the study plan. Please try again."
 
-def _build_fallback_response(self, task_id: str, context_id: str, message_text: str) -> TaskResult:
-    response_message = A2AMessage(
-        role="agent",
-        parts=[MessagePart(kind="text", text=message_text)],
-        taskId=task_id
-    )
-    artifacts = [Artifact(name="clarification", parts=[MessagePart(kind="text", text=message_text)])]
-    return TaskResult(
-        id=task_id,
-        contextId=context_id,
-        status=TaskStatus(state="completed", message=response_message),
-        artifacts=artifacts,
-        history=[response_message]  # Minimal history
-    )
+    def _build_fallback_response(self, task_id: str, context_id: str, message_text: str) -> TaskResult:
+        response_message = A2AMessage(
+            role="agent",
+            parts=[MessagePart(kind="text", text=message_text)],
+            taskId=task_id
+        )
+        artifacts = [Artifact(name="clarification", parts=[MessagePart(kind="text", text=message_text)])]
+        return TaskResult(
+            id=task_id,
+            contextId=context_id,
+            status=TaskStatus(state="completed", message=response_message),
+            artifacts=artifacts,
+            history=[response_message]  # Minimal history
+        )
