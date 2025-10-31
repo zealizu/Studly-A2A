@@ -3,7 +3,9 @@ from models.a2a import JSONRPCRequest, JSONRPCResponse, TaskResult, TaskStatus, 
 from agents.agent import StudlyAgent
 import json
 import asyncio
+from flask_cors import CORS
 app = Flask(__name__)
+CORS(app)
 agent = StudlyAgent()
 
 @app.route("/")
