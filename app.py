@@ -94,6 +94,12 @@ def a2a_endpoint():
         )
         return jsonify(response.model_dump())
     except Exception as e:
+        app.logger.error(
+        f"A2A endpoint error - ID: {body.get('id') if 'body' in locals() else 'N/A'}, "
+        f"Method: {body.get('method') if 'body' in locals() else 'N/A'}, "
+        f"Exception: {str(e)}",
+        exc_info=True  # Includes full traceback
+    )
         return jsonify({
             "jsonrpc": "2.0",
             "id": body.get("id") if "body" in locals() else None,
