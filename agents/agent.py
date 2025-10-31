@@ -4,7 +4,6 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 import os
 from dotenv import load_dotenv
 from uuid import uuid4
-import asyncio
 from typing import List, Optional
 from models.a2a import (
     A2AMessage, TaskResult, TaskStatus, Artifact,

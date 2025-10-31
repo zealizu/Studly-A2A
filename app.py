@@ -2,7 +2,6 @@ from flask import Flask, request, jsonify, Response
 from models.a2a import JSONRPCRequest, JSONRPCResponse, TaskResult, TaskStatus, Artifact, MessagePart, A2AMessage
 from agents.agent import StudlyAgent
 import json
-import asyncio
 from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)
@@ -81,12 +80,6 @@ def a2a_endpoint():
                 "error": {"code": -32601, "message": "Method not found"}
             }), 404
         print(messages)
-        app.logger.info(
-                f"User message - Task: {task_id or 'N/A'}, "
-                f"Context: {context_id or 'N/A'}, "
-                f"Method: {rpc_request.method}, "
-                f"Text: '{messages}...'"
-            )
         result = agent.process_messages(
                 messages=messages,
                 context_id=context_id,
