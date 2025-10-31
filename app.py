@@ -80,19 +80,13 @@ def a2a_endpoint():
                 "id": rpc_request.id,
                 "error": {"code": -32601, "message": "Method not found"}
             }), 404
-        
-        # Process with agent (per-request loop for async)
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        result = loop.run_until_complete(
-            agent.process_messages(
+        result = agent.process_messages(
                 messages=messages,
                 context_id=context_id,
                 task_id=task_id,
                 config=config
             )
-        )
-        loop.close()
+
         
         response = JSONRPCResponse(
             id=rpc_request.id,

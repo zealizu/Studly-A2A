@@ -18,8 +18,30 @@ apikey = os.environ["GEMINI_API_KEY"]
 class StudlyAgent:
     def __init__(self, ):
             self.study_contexts = {}
+            self.llm = ChatGoogleGenerativeAI(
+                model="gemini-2.5-flash",
+                google_api_key=apikey,
+                temperature=0.3,
+                max_retries=3,
+                # max_output_tokens=400  
+            )
+            self.prompt_template = PromptTemplate(
+                input_variables=["query"],
+                template=(
+                    """You are Studly, a study planner. Query: {query}
+                        Output a structured plan in markdown:
+                        # Duration: [days/weeks]
+                        ## Daily Goals: [list milestones]
+                        ## Time Estimates: [per day]
+                        # Tips: [motivational advice]
+                        If unrelated to studying, politely decline and suggest a study plan query. Concise (under 400 words).
+                        """
+                    
+                )
+            )
+            self.chain = self.prompt_template | self.llm
     
-    async def process_messages(
+    def process_messages(
         self,
         messages: List[A2AMessage],
         context_id: Optional[str] = None,
@@ -49,8 +71,8 @@ class StudlyAgent:
 
         # Retrieve past context (if any)
         history = self.study_contexts.get(context_id, [])
-        # Call Gemini asynchronously
-        study_plan = await self._generate_study_plan(user_text)
+        
+        study_plan = self._generate_study_plan(user_text)
         # Cache this interaction
         self.study_contexts[context_id] = history + [user_text]
 
@@ -83,39 +105,10 @@ class StudlyAgent:
             history=full_history
         )
         
-    async def _generate_study_plan(self, query: str) -> str:
+    def _generate_study_plan(self, query: str) -> str:
         """Call Gemini model via LangChain asynchronously."""
         try:
-            prompt_template = PromptTemplate(
-                input_variables=["query"],
-                template=(
-                    "You are Studly, an intelligent study planner. The user says:\n"
-                    "\"{query}\"\n\n"
-                    "Based on this, create a structured study plan with:\n"
-                    "- Total duration (days or weeks)\n"
-                    "- Daily goals or milestones\n"
-                    "- Estimated time per day\n"
-                    "- Motivational advice at the end.\n"
-                    "If the user asks something unrelated to study planning, "
-                    "politely decline and suggest they ask for a study plan instead.\n\n"
-                    "Format response with markdown headers for clarity."
-                    
-                )
-            )
-
-            llm = ChatGoogleGenerativeAI(
-                model="gemini-2.0-flash",
-                google_api_key=apikey,
-                temperature=0.5,
-                max_retries=3
-            )
-
-            chain = prompt_template | llm
-
-            # Run Gemini generation asynchronously
-            loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(None, chain.invoke, {"query": query})
-
+            response = self.chain.invoke({"query": query})
             return response.content if hasattr(response, "content") else str(response)
 
         except Exception as e:
