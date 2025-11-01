@@ -56,6 +56,6 @@ def normalize_telex_message(raw_message: Dict[str, Any]) -> List[A2AMessage]:
         full_history.append(A2AMessage(role="user", parts=[MessagePart(kind="text", text=query_text)]))
     
     messages = full_history
-    # app.logger.info(f"Normalized Telex: Query='{query_text[:50]}...', History chunks={len(history_texts)}")
+    
     
     return messages
