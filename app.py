@@ -3,6 +3,8 @@ from models.a2a import JSONRPCRequest, JSONRPCResponse, TaskResult, TaskStatus, 
 from agents.agent import StudlyAgent
 import json
 from flask_cors import CORS
+from utils import normalize_telex_message
+from pydantic import ValidationError
 app = Flask(__name__)
 CORS(app)
 agent = StudlyAgent()
@@ -34,7 +36,7 @@ def agent_card():
 
 @app.route("/tasks/send", methods=["POST"])
 def a2a_endpoint():
-    "Main A2A Endpoint"
+    """Main A2A Endpoint"""
     try:
         body = request.get_json()
         if body is None:
@@ -46,6 +48,9 @@ def a2a_endpoint():
                     "message": "Invalid Request: No JSON body"
                 }
             }), 400
+        
+        # Log raw body for debugging Telex payloads
+        app.logger.info(f"Raw Telex body: {json.dumps(body, indent=2)}")
         
         # Validate JSON-RPC request
         if body.get("jsonrpc") != "2.0" or "id" not in body:
@@ -59,6 +64,7 @@ def a2a_endpoint():
             }), 400
         print(body)
         
+        # Now safe: Model supports Telex nesting
         rpc_request = JSONRPCRequest(**body)
         
         # Extract messages
@@ -68,8 +74,13 @@ def a2a_endpoint():
         config = None
         
         if rpc_request.method == "message/send":
-            messages = [rpc_request.params.message]
+            raw_message = rpc_request.params.message
             config = rpc_request.params.configuration
+            
+            # Call the normalizer for Telex format
+            messages = normalize_telex_message(raw_message)
+            
+            task_id = raw_message.messageId
         elif rpc_request.method == "execute":
             messages = rpc_request.params.messages
             context_id = rpc_request.params.contextId
@@ -80,7 +91,15 @@ def a2a_endpoint():
                 "id": rpc_request.id,
                 "error": {"code": -32601, "message": "Method not found"}
             }), 404
-        print(messages)
+        
+        print(messages)  # Debug: Should now show list of A2AMessage
+        
+        if not messages:
+            # Fallback if normalizer returns empty (rare, but safe)
+            app.logger.warning("Normalizer returned empty messages - using fallback")
+            fallback_message = A2AMessage(role="user", parts=[MessagePart(kind="text", text="Please provide a study topic.")])
+            messages = [fallback_message]
+        
         result = agent.process_messages(
                 messages=messages,
                 context_id=context_id,
@@ -110,6 +129,6 @@ def a2a_endpoint():
                 "data": {"details": str(e)}
             }
         }), 500
-
+        
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000)

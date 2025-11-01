@@ -1,12 +1,12 @@
 from pydantic import BaseModel, Field
-from typing import Literal, Optional, List, Dict, Any
+from typing import Literal, Optional, List, Dict, Any, Union
 from datetime import datetime, timezone
 from uuid import uuid4
 
 class MessagePart(BaseModel):
     kind: Literal["text", "data", "file"]
     text: Optional[str] = None
-    data: Optional[Dict[str, Any]] = None
+    data: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None
     file_url: Optional[str] = None
 
 class A2AMessage(BaseModel):
@@ -40,7 +40,7 @@ class JSONRPCRequest(BaseModel):
     jsonrpc: Literal["2.0"]
     id: str
     method: Literal["message/send", "execute"]
-    params: MessageParams | ExecuteParams
+    params: Union[MessageParams, ExecuteParams, Dict[str, Any]] = Field(default_factory=dict)  # Fallback dict
 
 class TaskStatus(BaseModel):
     state: Literal["working", "completed", "input-required", "failed"]
