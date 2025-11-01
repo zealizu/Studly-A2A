@@ -36,7 +36,7 @@ def normalize_telex_message(raw_message: Dict[str, Any]) -> List[A2AMessage]:
         if kind == 'data':
             data = part.get('data') if is_dict else part.data
             if isinstance(data, list):
-                for sub_item in data[-10:]:  # Last 10 for recency
+                for sub_item in data[-3:]:  # Last 10 for recency
                     # FIX: Handle sub_item as dict (Telex raw JSON)
                     sub_kind = sub_item.get('kind') if isinstance(sub_item, dict) else getattr(sub_item, 'kind', None)
                     sub_text = sub_item.get('text') if isinstance(sub_item, dict) else getattr(sub_item, 'text', None)
