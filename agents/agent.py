@@ -39,7 +39,7 @@ class StudlyAgent:
                     
                 )
             )
-            self.chain = self.prompt_template | self.llm
+            self.chain = self.prompt_template | self.llm  
     
     def process_messages(
         self,
