@@ -178,10 +178,17 @@ def a2a_stream_endpoint():
         yield f"data: {json.dumps({'id': task_id, 'status': {'state': 'completed'}, 'artifacts': [{'name': 'study_plan', 'parts': [{'kind': 'text', 'text': full_plan}]}]})}\n\n"
         yield "data: [DONE]\n\n"
         # End SSE
-    return Response(stream_with_context(generate_stream()), mimetype="text/event-stream", headers={
-        "Cache-Control": "no-cache",
-        "Connection": "keep-alive"
-    })
+    return Response(
+        stream_with_context(generate_stream()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Access-Control-Allow-Origin": "*",  # Telex CORS
+            "Access-Control-Allow-Headers": "Content-Type",
+            "X-Accel-Buffering": "no"  # Disable buffering in proxies
+        }
+    )
         
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000)
