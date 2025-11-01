@@ -2,12 +2,16 @@ from flask import Flask, request, jsonify, Response
 from models.a2a import JSONRPCRequest, JSONRPCResponse, TaskResult, TaskStatus, Artifact, MessagePart, A2AMessage
 from agents.agent import StudlyAgent
 import json
+import asyncio
 from flask_cors import CORS
 from utils import normalize_telex_message
 from pydantic import ValidationError
 app = Flask(__name__)
 CORS(app)
 agent = StudlyAgent()
+
+# Configurable timeout for LLM calls (in seconds)
+LLM_TIMEOUT = 6.0
 
 @app.route("/")
 def home():
@@ -35,8 +39,8 @@ def agent_card():
     return Response(metadata_json, mimetype="application/json")
 
 @app.route("/tasks/send", methods=["POST"])
-def a2a_endpoint():
-    """Main A2A Endpoint"""
+async def a2a_endpoint():
+    """Main A2A Endpoint - Async"""
     try:
         body = request.get_json()
         if body is None:
@@ -100,12 +104,31 @@ def a2a_endpoint():
             fallback_message = A2AMessage(role="user", parts=[MessagePart(kind="text", text="Please provide a study topic.")])
             messages = [fallback_message]
         
-        result = agent.process_messages(
-                messages=messages,
-                context_id=context_id,
-                task_id=task_id,
-                config=config
+        # Async call with timeout handling
+        try:
+            result = await asyncio.wait_for(
+                agent.process_messages_async(
+                    messages=messages,
+                    context_id=context_id,
+                    task_id=task_id,
+                    config=config
+                ),
+                timeout=LLM_TIMEOUT
             )
+        except asyncio.TimeoutError:
+            # Return a graceful JSON-RPC error for timeout
+            app.logger.warning(f"Request {rpc_request.id} timed out after {LLM_TIMEOUT}s")
+            return jsonify({
+                "jsonrpc": "2.0",
+                "id": rpc_request.id,
+                "error": {
+                    "code": -32000,
+                    "message": "Request timeout",
+                    "data": {
+                        "details": f"The request took longer than {LLM_TIMEOUT}s to process. Please try again with a simpler request."
+                    }
+                }
+            }), 408
 
         
         response = JSONRPCResponse(
@@ -113,6 +136,18 @@ def a2a_endpoint():
             result=result
         )
         return jsonify(response.model_dump())
+    except asyncio.TimeoutError:
+        # Additional catch for any timeout not caught above
+        app.logger.warning(f"Request timed out after {LLM_TIMEOUT}s")
+        return jsonify({
+            "jsonrpc": "2.0",
+            "id": body.get("id") if "body" in locals() else None,
+            "error": {
+                "code": -32000,
+                "message": "Request timeout",
+                "data": {"details": f"The request took longer than {LLM_TIMEOUT}s to process."}
+            }
+        }), 408
     except Exception as e:
         app.logger.error(
         f"A2A endpoint error - ID: {body.get('id') if 'body' in locals() else 'N/A'}, "
