@@ -2,15 +2,20 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnableSequence
 from langchain_google_genai import ChatGoogleGenerativeAI
 import os
+import time
+import json
 from dotenv import load_dotenv
 from uuid import uuid4
-from typing import List, Optional
+from typing import List, Optional, Dict
 from models.a2a import (
     A2AMessage, TaskResult, TaskStatus, Artifact,
     MessagePart, MessageConfiguration
 )
 
 load_dotenv()
+
+# Check if latency tracing is enabled
+TRACE_LATENCY = os.environ.get("A2A_TRACE_LATENCY", "").lower() in ("true", "1", "yes")
 
 apikey = os.environ["GEMINI_API_KEY"]
 
@@ -48,7 +53,8 @@ class StudlyAgent:
         config: Optional[MessageConfiguration] = None
     ) -> TaskResult:
         """Process incoming messages and return a personalized study plan."""
-
+        agent_timings = {}
+        
         # Generate IDs if not provided
         context_id = context_id or str(uuid4())
         task_id = task_id or str(uuid4())
@@ -59,11 +65,13 @@ class StudlyAgent:
             raise ValueError("No message provided")
 
         # Extract text input
+        stage_start = time.perf_counter()
         user_text = ""
         for part in user_message.parts:
             if part.kind == "text":
                 user_text = part.text.strip()
                 break
+        agent_timings["text_extraction"] = time.perf_counter() - stage_start
 
         if not user_text:
             # Log empty case
@@ -71,13 +79,20 @@ class StudlyAgent:
             return self._build_fallback_response(task_id, context_id, "I didn't catch that—could you rephrase your study request?")
 
         # Retrieve past context (if any)
+        stage_start = time.perf_counter()
         history = self.study_contexts.get(context_id, [])
+        agent_timings["context_lookup"] = time.perf_counter() - stage_start
         
+        # LLM invocation
+        stage_start = time.perf_counter()
         study_plan = self._generate_study_plan(user_text)
+        agent_timings["llm_invocation"] = time.perf_counter() - stage_start
+        
         # Cache this interaction
         self.study_contexts[context_id] = history + [user_text]
 
         # Build response
+        stage_start = time.perf_counter()
         response_message = A2AMessage(
             role="agent",
             parts=[MessagePart(kind="text", text=study_plan)],
@@ -94,6 +109,16 @@ class StudlyAgent:
 
         # Combine conversation history
         full_history = messages + [response_message]
+        agent_timings["response_building"] = time.perf_counter() - stage_start
+        
+        # Log agent-level timings if tracing is enabled
+        if TRACE_LATENCY:
+            print(json.dumps({
+                "event": "agent_processing_detail",
+                "task_id": task_id,
+                "context_id": context_id,
+                "timings_ms": {k: round(v * 1000, 2) for k, v in agent_timings.items()}
+            }))
 
         return TaskResult(
             id=task_id,

@@ -2,12 +2,17 @@ from flask import Flask, request, jsonify, Response
 from models.a2a import JSONRPCRequest, JSONRPCResponse, TaskResult, TaskStatus, Artifact, MessagePart, A2AMessage
 from agents.agent import StudlyAgent
 import json
+import os
+import time
 from flask_cors import CORS
 from utils import normalize_telex_message
 from pydantic import ValidationError
 app = Flask(__name__)
 CORS(app)
 agent = StudlyAgent()
+
+# Check if latency tracing is enabled
+TRACE_LATENCY = os.environ.get("A2A_TRACE_LATENCY", "").lower() in ("true", "1", "yes")
 
 @app.route("/")
 def home():
@@ -37,8 +42,15 @@ def agent_card():
 @app.route("/tasks/send", methods=["POST"])
 def a2a_endpoint():
     """Main A2A Endpoint"""
+    timings = {}
+    start_total = time.perf_counter()
+    
     try:
+        # Stage 1: JSON parsing
+        stage_start = time.perf_counter()
         body = request.get_json()
+        timings["json_parsing"] = time.perf_counter() - stage_start
+        
         if body is None:
             return jsonify({
                 "jsonrpc": "2.0",
@@ -73,6 +85,8 @@ def a2a_endpoint():
         task_id = None
         config = None
         
+        # Stage 2: Message normalization
+        stage_start = time.perf_counter()
         if rpc_request.method == "message/send":
             raw_message = rpc_request.params.message
             config = rpc_request.params.configuration
@@ -91,6 +105,7 @@ def a2a_endpoint():
                 "id": rpc_request.id,
                 "error": {"code": -32601, "message": "Method not found"}
             }), 404
+        timings["message_normalization"] = time.perf_counter() - stage_start
         
         print(messages)  # Debug: Should now show list of A2AMessage
         
@@ -100,19 +115,38 @@ def a2a_endpoint():
             fallback_message = A2AMessage(role="user", parts=[MessagePart(kind="text", text="Please provide a study topic.")])
             messages = [fallback_message]
         
+        # Stage 3: Agent processing (includes context lookup and LLM invocation)
+        stage_start = time.perf_counter()
         result = agent.process_messages(
                 messages=messages,
                 context_id=context_id,
                 task_id=task_id,
                 config=config
             )
+        timings["agent_processing"] = time.perf_counter() - stage_start
 
-        
+        # Stage 4: Response serialization
+        stage_start = time.perf_counter()
         response = JSONRPCResponse(
             id=rpc_request.id,
             result=result
         )
-        return jsonify(response.model_dump())
+        response_json = jsonify(response.model_dump())
+        timings["response_serialization"] = time.perf_counter() - stage_start
+        
+        # Calculate total time
+        timings["total"] = time.perf_counter() - start_total
+        
+        # Log performance metrics if tracing is enabled
+        if TRACE_LATENCY:
+            app.logger.info(json.dumps({
+                "event": "tasks_send_latency",
+                "request_id": rpc_request.id,
+                "method": rpc_request.method,
+                "timings_ms": {k: round(v * 1000, 2) for k, v in timings.items()}
+            }))
+        
+        return response_json
     except Exception as e:
         app.logger.error(
         f"A2A endpoint error - ID: {body.get('id') if 'body' in locals() else 'N/A'}, "
