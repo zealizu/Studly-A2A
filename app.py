@@ -57,6 +57,7 @@ def a2a_endpoint():
                     "message": "Invalid Request: jsonrpc must be '2.0' and id is required"
                 }
             }), 400
+        print(body)
         
         rpc_request = JSONRPCRequest(**body)
         
