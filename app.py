@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, Response, stream_with_context
+from flask import Flask, request, jsonify, Response
 from models.a2a import JSONRPCRequest, JSONRPCResponse, TaskResult, TaskStatus, Artifact, MessagePart, A2AMessage
 from agents.agent import StudlyAgent
 import json
@@ -21,7 +21,7 @@ def agent_card():
         "url": request.host_url.rstrip('/'),
         "version": "1.0",
         "capabilities":{
-            "streaming": True,
+            "streaming": False,
             "pushNotifications": False
         },
         "skills": [
@@ -129,66 +129,6 @@ def a2a_endpoint():
                 "data": {"details": str(e)}
             }
         }), 500
-
-@app.route("/tasks/sendSubscribe", methods=["POST"])
-def a2a_stream_endpoint():
-    """A2A Streaming Endpoint - Yields SSE for progressive responses"""
-    def generate_stream():
-        body = request.get_json()
-        if body is None:
-            yield f"data: {json.dumps({'error': 'No JSON body'})}\n\n"
-            return
-        
-        # Log and validate (mirror your /tasks/send logic)
-        app.logger.info(f"Stream Telex body: {json.dumps(body, indent=2)}")
-        if body.get("jsonrpc") != "2.0" or "id" not in body:
-            yield f"data: {json.dumps({'error': 'Invalid JSON-RPC'})}\n\n"
-            return
-
-        print(body)  # Your debug
-        
-        # Parse RPC (your try-fallback if needed; assume updated model)
-        rpc_request = JSONRPCRequest(**body)
-        
-        # Extract/normalize (reuse your code)
-        messages = []
-        task_id = body.get('id')
-        if rpc_request.method == "message/send":
-            raw_message = rpc_request.params.message
-            messages = normalize_telex_message(raw_message)
-            if not messages:
-                messages = [A2AMessage(role="user", parts=[MessagePart(kind="text", text="Default query")])]
-        # ... (execute unchanged)
-        
-        print(messages)  # Your debug
-
-        # Yield initial "in_progress"
-        yield f"data: {json.dumps({'id': task_id, 'status': {'state': 'in_progress'}, 'message': {'role': 'agent', 'parts': [{'kind': 'text', 'text': 'Generating your study plan...'}]}})}\n\n"
-        
-        # Stream Gemini chunks (from your chain)
-        user_text = messages[-1].parts[0].text if messages and messages[-1].parts else "Quick study plan"
-        full_plan = ""  # Aggregate chunks
-        for chunk in agent.chain.stream({"query": user_text}):  # LangChain stream
-            if hasattr(chunk, 'content') and chunk.content:
-                full_plan += chunk.content
-                # Yield incremental chunk for client
-                yield f"data: {json.dumps({'id': task_id, 'chunk': chunk.content})}\n\n"
-
-        # Final "completed" with aggregated plan
-        yield f"data: {json.dumps({'id': task_id, 'status': {'state': 'completed'}, 'artifacts': [{'name': 'study_plan', 'parts': [{'kind': 'text', 'text': full_plan}]}]})}\n\n"
-        yield "data: [DONE]\n\n"
-        # End SSE
-    return Response(
-        stream_with_context(generate_stream()),
-        mimetype="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "Access-Control-Allow-Origin": "*",  # Telex CORS
-            "Access-Control-Allow-Headers": "Content-Type",
-            "X-Accel-Buffering": "no"  # Disable buffering in proxies
-        }
-    )
         
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000)
