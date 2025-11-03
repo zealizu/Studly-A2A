@@ -5,6 +5,9 @@ import json
 from flask_cors import CORS
 from utils import normalize_telex_message
 from pydantic import ValidationError
+from uuid import uuid4  # For generating IDs in raw mode
+from typing import Dict, Any  # For type hints
+
 app = Flask(__name__)
 CORS(app)
 agent = StudlyAgent()
@@ -38,7 +41,7 @@ def agent_card():
 def a2a_endpoint():
     """Main A2A Endpoint"""
     try:
-        body = request.get_json()
+        body: Dict[str, Any] = request.get_json()
         if body is None:
             return jsonify({
                 "jsonrpc": "2.0",
@@ -52,46 +55,59 @@ def a2a_endpoint():
         # Log raw body for debugging Telex payloads
         app.logger.info(f"Raw Telex body: {json.dumps(body, indent=2)}")
         
-        # Validate JSON-RPC request
-        if body.get("jsonrpc") != "2.0" or "id" not in body:
-            return jsonify({
-                "jsonrpc": "2.0",
-                "id": body.get("id"),
-                "error": {
-                    "code": -32600,
-                    "message": "Invalid Request: jsonrpc must be '2.0' and id is required"
-                }
-            }), 400
-        print(body)
-        
-        # Now safe: Model supports Telex nesting
-        rpc_request = JSONRPCRequest(**body)
-        
-        # Extract messages
-        messages = []
-        context_id = None
-        task_id = None
-        config = None
-        
-        if rpc_request.method == "message/send":
-            raw_message = rpc_request.params.message
-            config = rpc_request.params.configuration
+        print(body)  # Your debug print
+
+        # Handle both JSON-RPC and raw Task (for testers/A2A spec compliance)
+        if "jsonrpc" in body:
+            # JSON-RPC mode (your existing logic)
+            if body.get("jsonrpc") != "2.0" or "id" not in body:
+                return jsonify({
+                    "jsonrpc": "2.0",
+                    "id": body.get("id"),
+                    "error": {
+                        "code": -32600,
+                        "message": "Invalid Request: jsonrpc must be '2.0' and id is required"
+                    }
+                }), 400
+
+            rpc_request = JSONRPCRequest(**body)
+
+            # Extract messages
+            messages = []
+            context_id = None
+            task_id = None
+            config = None
             
-            # Call the normalizer for Telex format
-            messages = normalize_telex_message(raw_message)
-            
-            task_id = raw_message.messageId
-        elif rpc_request.method == "execute":
-            messages = rpc_request.params.messages
-            context_id = rpc_request.params.contextId
-            task_id = rpc_request.params.taskId
+            if rpc_request.method == "message/send":
+                raw_message = rpc_request.params.message
+                config = rpc_request.params.configuration
+                
+                # Call the normalizer for Telex format
+                messages = normalize_telex_message(raw_message)
+                
+                task_id = raw_message.messageId
+            elif rpc_request.method == "execute":
+                messages = rpc_request.params.messages
+                context_id = rpc_request.params.contextId
+                task_id = rpc_request.params.taskId
+            else:
+                return jsonify({
+                    "jsonrpc": "2.0",
+                    "id": rpc_request.id,
+                    "error": {"code": -32601, "message": "Method not found"}
+                }), 404
         else:
-            return jsonify({
-                "jsonrpc": "2.0",
-                "id": rpc_request.id,
-                "error": {"code": -32601, "message": "Method not found"}
-            }), 404
-        
+            # Raw Task mode (for testers) - parse directly with your models
+            messages = body.get('messages', []) or []
+            context_id = body.get('contextId')
+            task_id = body.get('id') or str(uuid4())
+            config = body.get('config', None)  # Or whatever config field
+
+            # If single message, normalize for Telex-like structure
+            if messages and len(messages) == 1:
+                raw_message = {'parts': messages[0].get('parts', [])}
+                messages = [normalize_telex_message(raw_message)[0]] if normalize_telex_message(raw_message) else messages
+
         print(messages)  # Debug: Should now show list of A2AMessage
         
         if not messages:
@@ -99,7 +115,7 @@ def a2a_endpoint():
             app.logger.warning("Normalizer returned empty messages - using fallback")
             fallback_message = A2AMessage(role="user", parts=[MessagePart(kind="text", text="Please provide a study topic.")])
             messages = [fallback_message]
-        
+
         result = agent.process_messages(
                 messages=messages,
                 context_id=context_id,
@@ -107,12 +123,19 @@ def a2a_endpoint():
                 config=config
             )
 
-        
-        response = JSONRPCResponse(
-            id=rpc_request.id,
-            result=result
-        )
-        return jsonify(response.model_dump())
+        # Return JSON-RPC for RPC mode, raw TaskResult for raw mode
+        if "jsonrpc" in body:
+            response = JSONRPCResponse(
+                id=body["id"],
+                result=result
+            )
+            return jsonify(response.model_dump())
+        else:
+            # Raw Task response - update and return TaskResult
+            result.id = task_id
+            result.status.state = "completed"
+            return jsonify(result.model_dump())
+
     except Exception as e:
         app.logger.error(
         f"A2A endpoint error - ID: {body.get('id') if 'body' in locals() else 'N/A'}, "
